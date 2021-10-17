@@ -14,7 +14,7 @@ module vec_vrf #(
     
     input  [RPORT-1:0] rd_en,
     input  [RPORT-1:0][5-1:0] rd_addr,
-    output [RPORT-1:0][XLEN-1:0] rd_data,
+    output [RPORT-1:0][XLEN-1:0] rd_data
 );
 
 reg [31:0][XLEN-1:0] vrf_ram;
