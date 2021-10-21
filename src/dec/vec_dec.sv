@@ -101,31 +101,15 @@ module vec_dec import vec_pkg::*; import rvv_pkg::*; #(
                 dec_req_d.vd      = dec_insn.vd;
                 dec_req_d.use_vd  = 1'b1;
                 dec_req_d.vm      = dec_insn.vm;
-
+                
+                dec_req_d.op      = dec_insn_d.func6;
+                illegal_insn      = dec_insn_d.func6 inside{000001,001000,001101,001111};
                 // Decode based on the func6 fieldus
                 unique case (dec_insn_d.func6)
-                  6'b000000: dec_req_d.op = dec_pkg::VADD;
-                  6'b000010: dec_req_d.op = dec_pkg::VSUB;
-                  6'b000011: dec_req_d.op = dec_pkg::VRSUB;
-                  6'b000100: dec_req_d.op = dec_pkg::VMINU;
-                  6'b000101: dec_req_d.op = dec_pkg::VMIN;
-                  6'b000110: dec_req_d.op = dec_pkg::VMAXU;
-                  6'b000111: dec_req_d.op = dec_pkg::VMAX;
-                  6'b001001: dec_req_d.op = dec_pkg::VAND;
-                  6'b001010: dec_req_d.op = dec_pkg::VOR;
-                  6'b001011: dec_req_d.op = dec_pkg::VXOR;
-                  6'b001100: begin 
-                    dec_req_d.op = dec_pkg::VRGATHER;
-                    dec_req_d.fu = dec_pkg::VSLD;
-                  end
-                  6'b001110: begin 
-                    dec_req_d.op = dec_pkg::VRGATHEREI16;
-                    dec_req_d.fu = dec_pkg::VSLD;
-                  end              
-                  6'b010000: dec_req_d.op = dec_pkg::VADC;
-                  6'b010001: dec_req_d.op = dec_pkg::VMADC;
-                  6'b010010: ara_req_d.op = ara_pkg::VSBC;
-                  6'b010011: ara_req_d.op = ara_pkg::VMSBC;
+                  6'(VADD),6'(VSUB),6'(VMINU),6'(VMIN),6'(VMAXU),6'(VMAX),6'(VAND),6'(VOR),6'(VXOR),6'(VRGATHER),6'(VRGATHEREI16),
+                  6'(VADC),6'(VMADC),6'(VSBC),6'(VMSBC),6'(VMERGE),6'(VMSEQ),6'(VMSNE),6'(VMSLTU),6'(VMSLT),6'(VMSLEU),6'(VMSLE),
+                  6'(VSADDU),6'(VSADD),6'(VSSUBU),6'(VSSUB),6'(VSLL),6'(VSMUL),6'(),6'(),6'(),6'(),6'(),6'(),6'(),6'(),6'(),
+                  
                   
                   6'b011000: ara_req_d.op = ara_pkg::VMSEQ;
                   6'b011001: ara_req_d.op = ara_pkg::VMSNE;
@@ -153,7 +137,7 @@ module vec_dec import vec_pkg::*; import rvv_pkg::*; #(
                 ara_req_d.use_vd        = 1'b1;
                 ara_req_d.vm            = insn.varith_type.vm;
                 ara_req_valid_d         = 1'b1;
-
+                illegal_insn            = insn.varith_type.func6
                 // Decode based on the func6 field
                 unique case (insn.varith_type.func6)
                   6'b000000: ara_req_d.op = ara_pkg::VADD;
