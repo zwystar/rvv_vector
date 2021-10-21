@@ -48,8 +48,10 @@ package vec_pkg;
     } vec_vlsu_op_e
     
     typedef enum logic [6:0] {
-        VMAND, VMNAND, VMANDN, VMXOR, VMOR, VMNOR, VMORN, VMXNOR,
-        VCPOP, VFIRST, VMSBF='b010100, VMSIF, VMSOF, VIOTA, VID
+        VMAND    ='b011001, VMNAND ='b011101, VMANDN ='b011000, VMXOR   ='b011011, 
+        VMOR     ='b011010, VMNOR  ='b011110, VMORN  ='b011100, VMXNOR  ='b011111,
+        VCPOP             , VFIRST          , VMSBF  ='b010100, VMSIF            , 
+        VMSOF             , VIOTA           , VID             
         //all is 15
     } ara_msk_op_e;
     
