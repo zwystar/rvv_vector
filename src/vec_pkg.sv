@@ -10,33 +10,34 @@ package vec_pkg;
     
     //support all 109 op for fu
     typedef enum logic [6:0] {
-        VADD, VSUB, VRSUB, 
-        VWADDU, VWSUBU, VWADD, VWSUB, 
-        VZEXT, VSEXT,
-        VADC, VMADC, VSBC, VMSBC,
-        VAND, VOR, VXOR,
-        VSLL, VSRL, VSRA,
-        VNSRL, VNSRA,
-        VMSEQ, VMSNE, VMSLTU, VMSLT, VMSLEU, VMSLE, VMSGTU, VMSGT,
-        VMINU, VMIN, VMAXU, VMAX, 
-        VMUL, VMULH, VMULHU, VMULHSU,
+        VADD   ='b000000, VSUB   ='b000010, VRSUB   ='b000011, 
+        VWADDU ='b110000, VWSUBU ='b110010, VWADD   ='b110001, VWSUB    ='b110011, 
+        VEXT   ='b010010,//VZEXT, VSEXT,
+        VADC   ='b010000, VMADC  ='b010001, VSBC    ='b010010, VMSBC    ='b010011,
+        VAND   ='b001001, VOR    ='b001010, VXOR    ='b001011,
+        VSLL   ='b100101, VSRL   ='b101000, VSRA    ='b101001,
+        VNSRL  ='b101100, VNSRA  ='b101101,
+        VMSEQ  ='b011000, VMSNE  ='b011001, VMSLTU  ='b011010, VMSLT    ='b011011, 
+        VMSLEU ='b011100, VMSLE  ='b011101, VMSGTU  ='b011110, VMSGT    ='b011111,
+        VMINU  ='b000100, VMIN   ='b000101, VMAXU   ='b000110, VMAX     ='b000111, 
+        VMUL            , VMULH           , VMULHU  ='b100100, VMULHSU  ='b100110,
         //VDIVU, VDIV, VREMU, VREM
-        VWMUL, VWMULU, VWMULSU,
-        VMACC, VNMSAC, VMADD, VNMSUB,
-        VWMACCU, VWMACC, VWMACCSU, VWMACCUS,
-        VMERGE,
-        VMV
+        VWMUL  ='b111011, VWMULU ='b111000, VWMULSU ='b111010,
+        VMACC           , VNMSAC ='b101111, VMADD            , VNMSUB   ='b101011,
+        VWMACCU='b111100, VWMACC ='b111101, VWMACCSU='b111111, VWMACCUS ='b111110,
+        VMV    ='b010111
         //all is 50
         //4 div op is not support
     } vec_lane_op_e;
      
     typedef enum logic [6:0] {
-        VREDSUM, VREDMAXU, VREDMAX, VREDMINU, VREDMIN, VREDAND, VREDOR, VREDXOR,
-        VWREDSUMU, VWREDSUM,
-        VMV,
-        VSLIDEUP, VSLIDEDOWN,VSLIDE1UP, VSLIDE1DOWN,
-        VRGATHER, VRGATHEREI16,
-        VCOMPRESS
+        VREDSUM    ='b000000, VREDMAXU     ='b000110, VREDMAX  ='b000111, VREDMINU   ='b000100, 
+        VREDMIN    ='b000101, VREDAND      ='b000001, VREDOR   ='b000010, VREDXOR    ='b000011,
+        VWREDSUMU  ='b110000, VWREDSUM     ='b110001,
+        VMV        ='b010000,
+        VSLIDEUP   ='b001110, VSLIDEDOWN   ='b001111,VSLIDE1UP ='b001110, VSLIDE1DOWN='b001111,
+        VRGATHER   ='b001100, VRGATHEREI16 ='b001110,
+        VCOMPRESS  ='b010111
         //all is 18
     } vec_vsld_op_e
     
@@ -48,7 +49,7 @@ package vec_pkg;
     
     typedef enum logic [6:0] {
         VMAND, VMNAND, VMANDN, VMXOR, VMOR, VMNOR, VMORN, VMXNOR,
-        VCPOP, VFIRST, VMSBF, VMSIF, VMSOF, VIOTA, VID
+        VCPOP, VFIRST, VMSBF='b010100, VMSIF, VMSOF, VIOTA, VID
         //all is 15
     } ara_msk_op_e;
     
