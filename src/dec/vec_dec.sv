@@ -103,7 +103,6 @@ module vec_dec import vec_pkg::*; import rvv_pkg::*; #(
                 dec_req_d.vm      = dec_insn.vm;
 
                 // Decode based on the func6 fieldus
-                u
                 unique case (dec_insn_d.func6)
                   6'b000000: dec_req_d.op = dec_pkg::VADD;
                   6'b000010: dec_req_d.op = dec_pkg::VSUB;
@@ -115,10 +114,19 @@ module vec_dec import vec_pkg::*; import rvv_pkg::*; #(
                   6'b001001: dec_req_d.op = dec_pkg::VAND;
                   6'b001010: dec_req_d.op = dec_pkg::VOR;
                   6'b001011: dec_req_d.op = dec_pkg::VXOR;
+                  6'b001100: begin 
+                    dec_req_d.op = dec_pkg::VRGATHER;
+                    dec_req_d.fu = dec_pkg::VSLD;
+                  end
+                  6'b001110: begin 
+                    dec_req_d.op = dec_pkg::VRGATHEREI16;
+                    dec_req_d.fu = dec_pkg::VSLD;
+                  end              
                   6'b010000: dec_req_d.op = dec_pkg::VADC;
                   6'b010001: dec_req_d.op = dec_pkg::VMADC;
                   6'b010010: ara_req_d.op = ara_pkg::VSBC;
                   6'b010011: ara_req_d.op = ara_pkg::VMSBC;
+                  
                   6'b011000: ara_req_d.op = ara_pkg::VMSEQ;
                   6'b011001: ara_req_d.op = ara_pkg::VMSNE;
                   6'b011010: ara_req_d.op = ara_pkg::VMSLTU;
