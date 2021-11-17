@@ -7,24 +7,10 @@ module dp_stage
     output logic       dec_req_ready,
     input  dec_req_t   dec_req,
     //with exu
-    input  logic       alu_resp_vd_valid,
-    input  logic       alu_resp_vs_valid,
-    input  logic [2:0] alu_resp_id,
-    input  logic       mac_resp_vd_valid,
-    input  logic       mac_resp_vs_valid,
-    input  logic [2:0] mac_resp_id,
-    input  logic       vld_resp_vd_valid,
-    input  logic       vld_resp_vs_valid,
-    input  logic [2:0] vld_resp_id,
-    input  logic       vst_resp_vd_valid,
-    input  logic       vst_resp_vs_valid,
-    input  logic [2:0] vst_resp_id,
-    input  logic       msk_resp_vd_valid,
-    input  logic       msk_resp_vs_valid,
-    input  logic [2:0] msk_resp_id,
-    input  logic       sld_resp_vd_valid,
-    input  logic       sld_resp_vs_valid,
-    input  logic [2:0] sld_resp_id,
+    input  logic [FUN_NUM-1:0]      fu_resp_vd_wr,
+    input  logic [FUN_NUM-1:0]      fu_resp_vs_wr,
+    input  logic [FUN_NUM-1:0][2:0] fu_resp_vd_id,
+    input  logic [FUN_NUM-1:0][2:0] fu_resp_vs_id,
     //with is_stage
     input  logic       alu_req_ready,
     output logic       alu_req_valid,
@@ -69,7 +55,19 @@ module dp_stage
   scb_t scb_dec_cur,scb_dec_next;
   logic [2:0] scb_dec_id;
   logic [SN-1:0] dec_vs1_raw,dec_vs2_raw,dec_vd_raw,dec_vm_raw,dec_vd_waw,dec_vs1_war,dec_vs2_war,dec_vd_war,dec_vm_war,dec_raw_nblk,dec_waw_nblk,dec_war_nblk;
+  logic dec_ok;
     
+  scb_t scb_iss_cur,scb_iss_next;
+  logic [2:0] older_nhzd_id;
+  logic [SN-1:0] scb_iss_hzd;
+  logic [SN-1:0][SN-1:0] iss_age;
+  logic                  iss_ok;
+  
+  scb_t scb_vs_cur,scb_vs_next;
+  logic vs_resp_ok;
+  
+  scb_t scb_vd_cur,scb_vd_next;
+  logic vd_resp_ok;
   ////////////////////////////////////////////////////////
   //dec->scb LOGIC
   ////////////////////////////////////////////////////////
@@ -114,131 +112,112 @@ module dp_stage
       scb_dec_next.vs_st[scb_dec_id] = 1'b1;
       scb_dec_next.dp_st[scb_dec_id] = 1'b1;
       scb_dec_next.req[scb_dec_id] = dec_req;
+    
+      dec_ok = dec_req_ready & dec_req_valid;
   end
   ////////////////////////////////////////////////////////
   //issue
   ////////////////////////////////////////////////////////
   always_comb begin
-    
-    
-  end
-  
-  
-  
-  
-  
-  
-  
-    genvar ii;
-  /////////////////////////////////////////////////////////////////////////////////////////////////
-  //score board req write
-  /////////////////////////////////////////////////////////////////////////////////////////////////
-    
-    //the insn can issue when nRAW & nWAW & nWAW
-    // nRAW : dp.chaning[i] && scb_q[i].issue or (dp.raw[i] ? scb_q[i].vd_wr : 1'b1)
-    // nWAW : (dp.waw[i] ? scb_q[i].vd_wr : 1'b1)
-    // nWAR : (dp.war[i] ? scb_q[i].vs_rd : 1'b1)
-
-    typedef struct packed {
-      logic            valid;
-      logic [SN-1:0]   age;
-
-      logic [SN-1:0]   byp;
-      logic [SN-1:0]   raw;//
-      logic [SN-1:0]   waw;
-      logic [SN-1:0]   war;
-      logic            issue;
-      logic [31:0]     vs_ohot;
-      logic [31:0]     vd_ohot;
-      dec_req_t        req;
-    } scb_t;
-  
-  logic [SN-1:0] scb_valid_q;
-  logic [SN-1:0] scb_sel_d;
-  scb_t [SN-1:0] scb_q;
-  scb_t scb_d;
-  
-  
-  
-  for(ii=0;ii<SN;ii++)begin
-    always @(posedge clk or negedge rst_n)begin
-      if(!rst_n)begin
-        scb_q[ii] <= '0;
-      end
-      else if(dec_req_valid & dec_req_ready & scb_sel_d[ii])begin
-        scb_q[ii] <= scb_d;
-      end
-    end
-    assign scb_valid[ii] = scb_q[ii].valid;
-  end
-
-  always_comb begin
-    dec_req_ready = ~&scb_valid;
-    scb_sel_d     = (~scb_valid_q) & (scb_valid_q+1'b1);
-    
-    scb_d         = '0;
-    scb_d.age     = scb_valid;
-    scb_d.req     = dec_req;
-    scb_d.valid   = 1'b1;
+    iss_age = scb_iss_cur.age;
+    //sel no hzd
     for(int i=0;i<SN;i++)begin
-      for(int j=0;j<SN;j++)begin
-          scb_d.raw[i] = (|(scb_d.vs_ohot & scb_q[j].vd_ohot)) & scb_d.age[j];//
-          scb_d.waw[i] = (|(scb_d.vd_ohot & scb_q[j].vd_ohot)) & scb_d.age[j];//
-          scb_d.war[i] = (|(scb_d.vd_ohot & scb_q[j].vs_ohot)) & scb_d.age[j];//
-          scb_d.byp[i] = scb_d.req.nblk & scb_q[j].req.nblk;//
-      end
-    end
-    
-  end
-
-  logic [SN-1:0][SN-1:0] age_dp,age_cur;
-  always_comb begin
-    age_next = age_cur;
-
-  end
-
-  ///////////////////////////////////////////////////////////////////////////////////
-  //sel the no hzd
-  ///////////////////////////////////////////////////////////////////////////////////
-  logic [SN-1:0] hzd_ohot;
-  logic [SN-1:0][SN-1:0] age_tmp;
-  logic [DP_ID_WIDTH-1:0] older_nhzd_id;
-  always_comb begin
-    age_tmp = age_scb;
-    for(int i=0;i<SN;i++)begin
-      hzd_ohot[i] = ((|scb_q[i].raw) | (|scb_q[i].waw) | (|scb_q[i].war) | (scb_q[i].issue==1'b0);
-
-      if((scb_q[i].req.fu==ALU) & (alu_req_empty==1'b0)) hzd_ohot[i] = 1'b1;
-      if((scb_q[i].req.fu==MAC) & (alu_req_empty==1'b0)) hzd_ohot[i] = 1'b1;
-      if((scb_q[i].req.fu==SLD) & (alu_req_empty==1'b0)) hzd_ohot[i] = 1'b1;
-      if((scb_q[i].req.fu==LD ) & (alu_req_empty==1'b0)) hzd_ohot[i] = 1'b1;
-      if((scb_q[i].req.fu==ST ) & (alu_req_empty==1'b0)) hzd_ohot[i] = 1'b1;
-      if((scb_q[i].req.fu==MSK) & (alu_req_empty==1'b0)) hzd_ohot[i] = 1'b1;
-
-      if(hzd_ohot[i])begin
-        for(int j=0;j<SN;j++)begin
-          age_tmp[j][i] = (j==i);
+      scb_iss_hzd[i] = |scb_iss_cur.raw[i];
+      scb_iss_hzd[i] = |scb_iss_cur.waw[i];
+      scb_iss_hzd[i] = |scb_iss_cur.war[i];
+      scb_iss_hzd[i] = |(scb_iss_cur.req[i].fu & fu_req_busy);//struct hzd
+      
+      if(scb_iss_hzd[i])begin
+          for(int j=0;j<SN;j++)begin
+          iss_age[j][i] = (j==i);
+          end
         end
-      end
     end
-
+    
     older_nhzd_id = '0;
     for(int j=0;j<SN;j++)begin
-        if(age_tmp[j] == 'd0) older_nhzd_id = j;
+        if(iss_age[j] == 'd0) older_nhzd_id = j;
     end
-
-    alu_req_wr = (scb_q[older_nhzd_id].req.fu==ALU) & (|hzd_ohot);
-    mac_req_wr = (scb_q[older_nhzd_id].req.fu==MAC) & (|hzd_ohot);
-    ld_req_wr  = (scb_q[older_nhzd_id].req.fu==SLD) & (|hzd_ohot);
-    st_req_wr  = (scb_q[older_nhzd_id].req.fu==LD ) & (|hzd_ohot);
-    msk_req_wr = (scb_q[older_nhzd_id].req.fu==ST ) & (|hzd_ohot);
-    sld_req_wr = (scb_q[older_nhzd_id].req.fu==MSK) & (|hzd_ohot);
-    dp_req     = (scb_q[older_nhzd_id].req;
-
+    iss_ok = &scb_iss_hzd;
+    fu_req_wr = scb_iss_cur.req[older_nhzd_id].fu & {FU_NUM{iss_ok}};
+    //updata scb
+    scb_iss_next = scb_iss_cur;
+    scb_iss_next.dp_st[older_nhzd_id] = 1'b0;
+    for(int i=0;i<SN;i++)begin
+      if(scb_iss_cur.raw_nblk[i][older_nhzd_id])begin
+        scb_iss_next.raw[i][older_nhzd_id] = 1'b0;
+      end
+      if(scb_iss_cur.waw_nblk[i][older_nhzd_id])begin
+        scb_iss_next.waw[i][older_nhzd_id] = 1'b0;
+      end
+      if(scb_iss_cur.war_nblk[i][older_nhzd_id])begin
+        scb_iss_next.war[i][older_nhzd_id] = 1'b0;
+      end
+      scb_iss_next.vm_war[i][older_nhzd_id] = 1'b0;
+    end
   end
-  ///////////////////////////////////////////////////////////////////////////////////
-  //age updata
-  ///////////////////////////////////////////////////////////////////////////////////
-
+  ////////////////////////////////////////////////////////
+  //vs resp
+  ////////////////////////////////////////////////////////
+  always_comb begin
+    scb_vs_next = scb_vs_cur;
+    for(int i=0;i<FU_NUM;i++)begin
+      if(fu_vs_resp[i])begin
+        scb_vs_next.vs_st[fu_vs_resp_id[i]] = 1'b0;
+        scb_vs_next.war[i][fu_vs_resp_id[i]] = 1'b0;
+      end
+    end
+    vs_resp_ok = |fu_vs_resp;
+  end
+  ////////////////////////////////////////////////////////
+  //vd resp
+  ////////////////////////////////////////////////////////
+  always_comb begin
+    scb_vd_next = scb_vd_cur;
+    for(int i=0;i<FU_NUM;i++)begin
+      if(fu_vd_resp[i])begin
+        scb_vd_next.vd_st[fu_vd_resp_id[i]] = 1'b0;
+        scb_vd_next.raw[i][fu_vd_resp_id[i]] = 1'b0;
+        scb_vd_next.waw[i][fu_vd_resp_id[i]] = 1'b0;
+        scb_vd_next.valid[i][fu_vd_resp_id[i]] = 1'b0;
+      end
+    end
+    vd_resp_ok = |fu_vd_resp;
+  end
+  ////////////////////////////////////////////////////////
+  //scb updata
+  ////////////////////////////////////////////////////////
+  logic scb_ok;
+  always_comb begin
+    scb_vd_cur = scb_q;
+    scb_d = scb_q;
+    if(vd_resp_ok)begin
+      scb_d = scb_vd_next;
+      scb_ok = 1'b1;
+    end
+    scb_vs_cur = scb_q;
+    if(vs_resp_ok)begin
+      scb_d = scb_vs_next;
+      scb_ok = 1'b1;
+    end
+    scb_iss_cur = scb_q;
+    if(iss_ok)begin
+      scb_d = scb_iss_next;
+      scb_ok = 1'b1;
+    end
+    scb_dec_cur = scb_q;
+    if(dec_ok)begin
+      scb_d = scb_dec_next;
+      scb_ok = 1'b1;
+    end
+  end
+  
+  always_ff@(posedge clk or negedge rst_n)begin
+    if(!rst_n)
+        scb_q <= '0;
+    else if(scb_ok)
+      scb_q <= scb_d;
+  end
+  
 
 endmodule
