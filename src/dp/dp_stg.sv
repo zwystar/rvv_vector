@@ -1,30 +1,20 @@
 module dp_stage
   #( ) (
-    input              clk,
-    input              rst_n,
+    input  logic                    clk,
+    input  logic                    rst_n,
     //with dec 
-    input  logic       dec_req_valid,
-    output logic       dec_req_ready,
-    input  dec_req_t   dec_req,
+    input  logic                    dec_req_valid,
+    output logic                    dec_req_ready,
+    input  dec_req_t                dec_req,
     //with exu
     input  logic [FUN_NUM-1:0]      fu_resp_vd_wr,
     input  logic [FUN_NUM-1:0]      fu_resp_vs_wr,
     input  logic [FUN_NUM-1:0][2:0] fu_resp_vd_id,
     input  logic [FUN_NUM-1:0][2:0] fu_resp_vs_id,
     //with is_stage
-    input  logic       alu_req_ready,
-    output logic       alu_req_valid,
-    input  logic       mac_req_ready,
-    output logic       mac_req_valid,
-    input  logic       ld_req_ready,
-    output logic       ld_req_valid,
-    input  logic       st_req_ready,
-    output logic       st_req_valid,
-    input  logic       msk_req_ready,
-    output logic       msk_req_valid,
-    input  logic       sld_req_ready,
-    output logic       sld_req_valid,
-    output dec_req_t   dp_req
+    input  logic [FUN_NUM-1:0]      fu_req_busy,
+    output logic [FUN_NUM-1:0]      fu_req_wr,
+    output dec_req_t                fu_req
   );
   
     localparam SN = 8;
