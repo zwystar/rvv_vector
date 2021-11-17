@@ -181,6 +181,7 @@ module dp_stage
   always_comb begin
     scb_vd_cur = scb_q;
     scb_d = scb_q;
+    scb_ok = 1'b0;
     if(vd_resp_ok)begin
       scb_d = scb_vd_next;
       scb_ok = 1'b1;
