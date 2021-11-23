@@ -1,0 +1,980 @@
+module vec_dec 
+//import vec_pkg::*; import rvv_pkg::*; 
+#(
+
+) (
+    // Clock and reset
+    input  logic                                 clk,
+    input  logic                                 rst,
+    // Interfaces with scalar
+    input  sac_req_t                             sca_req,
+    input  logic                                 sca_req_valid,
+  
+    output sca_resp_t                            sca_resp,
+    output logic                                 sca_resp_valid,
+    input  logic                                 sca_resp_ready,
+    // Interface with dp
+    output dec_req_t                             dec_req,
+    output logic                                 dec_req_valid,
+    input  logic                                 dec_req_ready
+  );
+//sew_type=
+//SEW = SEW *SEW 0
+//2SEW= SEW *SEW 1
+//2SEW= 2SEW*SEW 2
+//SEW = 2SEW*SEW 3
+/////////////////////////////////////////////////////////////////////////////////////
+//
+// csr register
+//
+/////////////////////////////////////////////////////////////////////////////////////
+  typedef struct packed {
+    logic vill;
+    logic [XLEN-1-9:0] reserved;
+    logic vta;
+    logic vma;
+    logic [2:0] vsew;
+    logic [2:0] vlmul;
+  } vtype_t;
+
+
+  typedef struct packed {
+    logic [XLEN-1:0] imm;
+    logic [XLEN-1:0] rs1;
+    logic [XLEN-1:0] rs2;
+    logic [4:0] vs1;
+    logic [4:0] vs2;
+    logic [4:0] vd;
+    logic       vm;
+
+    logic [0:0] func1;
+    logic [1:0] func2;
+    logic [2:0] func3;
+    logic [5:0] func6;
+    logic [6:0] func7;
+    
+    logic [2:0] nf;
+    logic       mew;
+    logic [1:0] mop;
+    logic [4:0] umop;
+    logic [2:0] width;
+
+    logic [6:0] opcode;
+
+    logic [4:0] uimm;
+    logic [9:0] zimm10;
+    logic [10:0] zimm11;
+  } dec_insn_t;
+
+  
+  logic is_config;
+  logic [XLEN-1:0] vlmax;
+  logic [XLEN-1:0] vstart_d,vxsat_d,vxrm_d,vcsr_d,vl_d,vlenb_d;
+  logic [XLEN-1:0] vstart_q,vxsat_q,vxrm_q,vcsr_q,vl_q,vlenb_q;
+  vtype_t vtype_d,vtype_q;
+  
+
+
+  dec_req_t dec_req_d;
+
+
+  always_comb begin
+    vstart_q = '0;
+    vlenb_q  = VLEN/8;
+  end
+  always_ff @(posedge clk or negedge rst) begin : proc_
+    if(~rst) begin
+      vxsat_q <= '0;
+      vxrm_q  <= '0;
+      vcsr_q  <= '0;
+      vl_q    <= '0;
+    end else if(is_config) begin
+      vxsat_q <= vxsat_d;
+      vxrm_q  <= vxrm_d ;
+      vcsr_q  <= vcsr_d ;
+      vl_q    <= vl_d   ;
+    end
+  end
+/////////////////////////////////////////////////////////////////////////////////////
+//
+// decoder comb
+//
+/////////////////////////////////////////////////////////////////////////////////////
+  always_comb begin
+    dec_insn_d.rs1    = sca_req.rs1;
+    dec_insn_d.rs2    = sca_req.rs2;
+    dec_insn_d.vs1    = sca_req.insn[19:15];
+    dec_insn_d.vs2    = sca_req.insn[24:20];
+    dec_insn_d.vd     = sca_req.insn[11:7];
+    dec_insn_d.vm     = sca_req.insn[25];
+    dec_insn_d.func1  = sca_req.insn[31];
+    dec_insn_d.func2  = sca_req.insn[14:12];
+    dec_insn_d.func3  = sca_req.insn[31:30];
+    dec_insn_d.func6  = sca_req.insn[31:26];
+    dec_insn_d.func7  = sca_req.insn[31:25];
+    dec_insn_d.opcode = sca_req.insn[31:29];
+    dec_insn_d.mew    = sca_req.insn[28];
+    dec_insn_d.mop    = sca_req.insn[27:26];
+    dec_insn_d.umop   = sca_req.insn[24:20];
+    dec_insn_d.width  = sca_req.insn[14:12];
+
+    dec_insn_d.nf     = sca_req.insn[6:0];
+    dec_insn_d.uimm   = sca_req.insn[19:15];
+    dec_insn_d.zimm10 = sca_req.insn[30:20];
+    dec_insn_d.zimm11 = sca_req.insn[31:20];
+  end
+
+  always_comb begin
+    
+    vxsat_d            = vxsat_q;
+    vxrm_d             = vxrm_q ;
+    vcsr_d             = vcsr_q ;
+    vl_d               = vl_q   ;
+
+    dec_req_d.rs1      = dec_insn_d.rs1;
+    dec_req_d.rs2      = dec_insn_d.rs2;
+    dec_req_d.use_rs1  = '0;
+    dec_req_d.vs1      = dec_insn_d.vs1;
+    dec_req_d.use_vs1  = '0;
+    dec_req_d.vs2      = dec_insn_d.vs2;
+    dec_req_d.use_vs2  = '0;
+    dec_req_d.vd       = dec_insn_d.vd;
+    dec_req_d.use_vd   = '0;
+    dec_req_d.vm       = dec_insn_d.vm;
+    dec_req_d.vs1_usig = '0;
+    dec_req_d.vs2_usig = '0;
+    dec_req_d.sew_type = '0;
+    dec_req_d.sew      = vtype_q.vsew;
+    dec_req_d.vl       = vl_q;
+    dec_req_d.lmul     = vlmul;
+    dec_req_d.fu       = '0;
+    dec_req_d.op       = '0;
+
+    unique case (dec_req_d.opcode)
+      OpcodeVec:begin
+        unique case (dec_req_d.func3)
+              ///////////////////////////////////////////////////////////////////////////////////////////////////
+              // Configuration instructions
+              ///////////////////////////////////////////////////////////////////////////////////////////////////
+              OPCFG: begin: opcfg
+                is_config_wr       = 1'b1;
+                // Update vtype
+                if (dec_req_d.func1 == 1'b0) begin // vsetvli
+                  vtype_d = dec_req_d.zimm11;
+                end else if (dec_req_d.func2 == 2'b11) begin // vsetivli
+                  vtype_d = dec_req_d.zimm10;
+                end else if (dec_req_d.func7 == 7'b100_0000) begin // vsetvl
+                  vtype_d = sca_req.rs2;
+                end else
+                  illegal_insn = 1'b1;
+
+                // Check whether the updated vtype makes sense
+                if ((vtype_d.vsew > $clog2(ELENB)) || // SEW <= ELEN
+                    (vtype_d.vlmul inside {3'b100} ) ||                    // reserved value
+                    // LMUL >= SEW/ELEN
+                    (signed'($clog2(ELENB)) + signed'(vtype_d.vlmul) < signed'(vtype_d.vsew))) begin
+                  vtype_d = '{vill: 1'b1, default: '0};
+                  vl_d    = '0;
+                end
+                // Update the vector length
+                else begin
+                  // Maximum vector length. VLMAX = LMUL * VLEN / SEW.
+                  automatic int unsigned vlmax = VLENB >> vtype_d.vsew;
+                  vlmax = vtype_d.vlmul[2] ? (vlmax >> vtype_d.vlmul[1:0]) : (vlmax <<vtype_d.vlmul[1:0])
+
+                  if (dec_req_d.func2 == 2'b11) begin // vsetivli
+                    vl_d = dec_req_d.uimm;
+                  end else begin // vsetvl || vsetvli
+                    if (dec_req_d.rs1 == '0 && dec_req_d.rd == '0) begin
+                      vl_d = vl_q;// Do not update the vector length
+                    end else if (dec_req_d.rs1 == '0 && dec_req_d.rd != '0) begin
+                      vl_d = vlmax;// Set the vector length to vlmax
+                    end else begin
+                      vl_d = (sca_req.rs1 > vlmax) ? vlmax : sca_req.rs1;// Normal stripmining
+                    end
+                  end
+                end
+                
+              end
+              ///////////////////////////////////////////////////////////////////////////////////////////////////
+              // vector-vector
+              ///////////////////////////////////////////////////////////////////////////////////////////////////
+              OPIVV: begin: opivv//
+                dec_req_d.vs1     = dec_insn_d.vs1;
+                dec_req_d.use_vs1 = 1'b1;
+                dec_req_d.vs2     = dec_insn_d.vs2;
+                dec_req_d.use_vs2 = 1'b1;
+                dec_req_d.vd      = dec_insn_d.vd;
+                dec_req_d.use_vd  = 1'b1;
+                dec_req_d.vm      = dec_insn_d.vm;
+                dec_req_d.vs2_usig= 1'0; 
+                dec_req_d.sew_type= 2'0; 
+                // Decode based on the func6 fieldus
+                dec_req_d.fu      = LANE;
+                unique case (dec_req_d.func6)
+                  6'b000000 : dec_req_d.op = VADD;
+                  6'b000010 : dec_req_d.op = VSUB;
+                  6'b000100 : begin
+                    dec_req_d.op      = VMIN;
+                    dec_req_d.vs2_usig    = 1'1;
+                  end
+                  6'b000101 : dec_req_d.op = VMIN;
+                  6'b000110 : begin
+                    dec_req_d.op      = VMAX;
+                    dec_req_d.vs2_usig    = 1'1;
+                  end
+                  6'b000111 : dec_req_d.op = VMAX;
+                  6'b001001 : dec_req_d.op = VAND;
+                  6'b001010 : dec_req_d.op = VXOR;
+                  6'b001100 : begin 
+                    dec_req_d.op = VRGATHER;  
+                    dec_req_d.fu = VSLD;
+                  end
+                  6'b001110 : begin 
+                    dec_req_d.op = VRGATHER16;
+                    dec_req_d.fu = VSLD;
+                  end
+                  6'b010000 : dec_req_d.op = VADC;
+                  6'b010001 : dec_req_d.op = VMADC;
+                  6'b010011 : dec_req_d.op = VMSBC;
+                  6'b010111 : dec_req_d.op = VMERGE;
+                  6'b011000 : dec_req_d.op = VMSEQ;
+                  6'b011001 : dec_req_d.op = VMSNE;
+                  6'b011010 : begin
+                    dec_req_d.op   = VMSLT;
+                    dec_req_d.vs2_usig = 1'1;
+                  end
+                  6'b011011 : dec_req_d.op = VMSLT;
+                  6'b011100 : begin
+                    dec_req_d.op = VMSLE;
+                    dec_req_d.vs2_usig = 1'1;
+                  end
+                  6'b011101 : dec_req_d.op = VMSLE;
+                  6'b100000 : begin
+                    dec_req_d.op = VSADD;
+                    dec_req_d.vs2_usig = 1'1;
+                  end
+                  6'b100001 : dec_req_d.op = VSADD;
+                  6'b100010 : begin
+                    dec_req_d.op = VSSUB;
+                    dec_req_d.vs2_usig = 1'1;
+                  end
+                  6'b100011 : dec_req_d.op = VSSUB;
+                  6'b100101 : dec_req_d.op = VSLL;
+                  6'b100111 : dec_req_d.op = VSMUL;
+                  6'b101000 : dec_req_d.op = VSRL;
+                  6'b101001 : dec_req_d.op = VSRA;
+                  6'b101010 : dec_req_d.op = VSSRL;
+                  6'b101011 : dec_req_d.op = VSSRA;
+                  6'b101100 : dec_req_d.op = VNSRL;
+                  6'b101101 : dec_req_d.op = VNSRA;
+                  6'b101110 : begin
+                    dec_req_d.op = VNCLIP;
+                    dec_req_d.vs2_usig = 1'1;
+                  end
+                  6'b101111 : dec_req_d.op = VNCLIP;              
+                  6'b110000 : begin
+                    dec_req_d.op   = VWREDSUM;
+                    dec_req_d.fu   = VSLD;
+                    dec_req_d.vs2_usig = 1'1;
+                    dec_req_d.sew_type= 2'd3;//2SEW=SEW*SEW 2SEW=2SEW*SEW 
+                  end
+                  6'b110001 : begin
+                    dec_req_d.op = VWREDSUM;
+                    dec_req_d.fu = VSLD;
+                    dec_req_d.sew_type= 2'd3;
+                  end
+                  default: illegal_insn = 1'b1;
+                endcase
+              end//opivv
+              ///////////////////////////////////////////////////////////////////////////////////////////////////
+              // vector-rs1
+              ///////////////////////////////////////////////////////////////////////////////////////////////////
+              OPIVX: begin: opivx
+                dec_req_d.vs1     = dec_insn_d.vs1;
+                dec_req_d.use_vs1 = 1'b0;
+                dec_req_d.vs2     = dec_insn_d.vs2;
+                dec_req_d.use_vs2 = 1'b1;
+                dec_req_d.vd      = dec_insn_d.vd;
+                dec_req_d.use_vd  = 1'b1;
+                dec_req_d.vm      = dec_insn_d.vm
+                dec_req_d.rs1     = dec_insn_d.rs1;
+                dec_req_d.use_rs1 = 1'b1;
+                dec_req_d.vs2_usig    = 1'0; 
+                dec_req_d.sew_type= 2'0;
+                // Decode based on the func6 field
+                dec_req_d.fu      = LANE
+                unique case (dec_insn_d.func6)
+                  6'b000000: dec_req_d.op = VADD;
+                  6'b000011: dec_req_d.op = VRSUB;
+                  6'b000100: begin
+                    dec_req_d.op = VMIN;
+                    dec_req_d.usig = 1'b1;
+                  end
+                  6'b000101: dec_req_d.op = VMIN;
+                  6'b000110: begin
+                    dec_req_d.op = VMAX;
+                    dec_req_d.vs2_usig = 1'b1;
+                  end
+                  6'b000111: dec_req_d.op = VMAX;
+                  6'b001001: dec_req_d.op = VAND;
+                  6'b001010: dec_req_d.op = VOR;
+                  6'b001011: dec_req_d.op = VXOR;
+                  6'b001100 : begin 
+                    dec_req_d.op = VRGATHER;  
+                    dec_req_d.fu = VSLD;
+                  end
+                  6'b001110 : begin 
+                    dec_req_d.op = VSLIDEUP;
+                    dec_req_d.fu = VSLD;
+                  end
+                  6'b001111 : begin 
+                    dec_req_d.op = VSLIDEDOWN;
+                    dec_req_d.fu = VSLD;
+                  end
+                  6'b010000: dec_req_d.op = VADC;
+                  6'b010001: dec_req_d.op = VMADC;
+                  6'b010010: dec_req_d.op = VSBC;
+                  6'b010011: dec_req_d.op = VMSBC;
+                  6'b010111: dec_req_d.op = VMERGE;
+                  6'b011000: dec_req_d.op = VMSEQ;
+                  6'b011001: dec_req_d.op = VMSNE;
+                  6'b011010: begin
+                    dec_req_d.op = VMSLT;
+                    dec_req_d.vs2_usig = 1'b1;
+                  end
+                  6'b011011: dec_req_d.op = VMSLT;
+                  6'b011100: begin
+                    dec_req_d.op = VMSLE;
+                    dec_req_d.vs2_usig = 1'b1;
+                  end
+                  6'b011101: dec_req_d.op = VMSLE;
+                  6'b011110: begin
+                    dec_req_d.op = VMSGT;
+                    dec_req_d.vs2_usig = 1'b1;
+                  end
+                  6'b011111: dec_req_d.op = VMSGT; 
+                  6'b100000 : begin
+                    dec_req_d.op = VSADD;
+                    dec_req_d.vs2_usig = 1'1;
+                  end
+                  6'b100001 : dec_req_d.op = VSADD;
+                  6'b100010 : begin
+                    dec_req_d.op = VSSUB;
+                    dec_req_d.vs2_usig = 1'1;
+                  end
+                  6'b100011 : dec_req_d.op = VSSUB;                  
+                  6'b100101 : dec_req_d.op = VSLL;
+                  6'b100111 : dec_req_d.op = VSMUL;
+                  6'b101000 : dec_req_d.op = VSRL;
+                  6'b101001 : dec_req_d.op = VSRA;
+                  6'b101010 : dec_req_d.op = VSSRL;
+                  6'b101011 : dec_req_d.op = VSSRA;
+                  6'b101100 : dec_req_d.op = VNSRL;
+                  6'b101101 : dec_req_d.op = VNSRA;
+                  6'b101110 : begin
+                    dec_req_d.op = VNCLIP;
+                    dec_req_d.vs2_usig = 1'1;
+                  end
+                  6'b101111 : dec_req_d.op = VNCLIP;
+                  default: illegal_insn = 1'b1;
+                endcase
+              end
+              ///////////////////////////////////////////////////////////////////////////////////////////////////
+              // vector-imm
+              ///////////////////////////////////////////////////////////////////////////////////////////////////
+              OPIVI: begin: opivi
+                dec_req_d.vs1     = dec_insn_d.vs1;
+                dec_req_d.use_vs1 = 1'b0;
+                dec_req_d.vs2     = dec_insn_d.vs2;
+                dec_req_d.use_vs2 = 1'b1;
+                dec_req_d.vd      = dec_insn_d.vd;
+                dec_req_d.use_vd  = 1'b1;
+                dec_req_d.vm      = dec_insn_d.vm
+                dec_req_d.rs1     = dec_insn_d.imm;
+                dec_req_d.use_rs1 = 1'b0;
+                dec_req_d.use_imm = 1'b1;
+                dec_req_d.vs1_usig= 1'0;
+                dec_req_d.vs2_usig= 1'0; 
+                dec_req_d.sew_type= 2'0;
+                // Decode based on the func6 field
+                dec_req_d.fu      = LANE
+                unique case (dec_insn_d.func6)
+                  6'b000000: dec_req_d.op = VADD;
+                  6'b000011: dec_req_d.op = VRSUB;
+                  6'b001001: dec_req_d.op = VAND;
+                  6'b001010: dec_req_d.op = VOR;
+                  6'b001011: dec_req_d.op = VXOR;
+                  6'b001100 : begin 
+                    dec_req_d.op = VRGATHER;  
+                    dec_req_d.fu = VSLD;
+                  end
+                  6'b001110 : begin 
+                    dec_req_d.op = VSLIDEUP;
+                    dec_req_d.fu = VSLD;
+                  end
+                  6'b001111 : begin 
+                    dec_req_d.op = VSLIDEDOWN;
+                    dec_req_d.fu = VSLD;
+                  end
+                  6'b010000: dec_req_d.op = VADC;
+                  6'b010001: dec_req_d.op = VMADC;
+                  6'b010111: dec_req_d.op = VMERGE;
+                  6'b011000: dec_req_d.op = VMSEQ;
+                  6'b011001: dec_req_d.op = VMSNE;
+                  6'b011100: begin
+                    dec_req_d.op = VMSLE;
+                    dec_req_d.vs2_usig = 1'b1;
+                  end
+                  6'b011101: dec_req_d.op = VMSLE;
+                  6'b011110: begin
+                    dec_req_d.op = VMSGT;
+                    dec_req_d.vs2_usig = 1'b1;
+                  end
+                  6'b011111: dec_req_d.op = VMSGT; 
+                  6'b100000 : begin
+                    dec_req_d.op = VSADD;
+                    dec_req_d.vs2_usig = 1'1;
+                  end
+                  6'b100001 : dec_req_d.op = VSADD;                  
+                  6'b100101 : dec_req_d.op = VSLL;
+                  6'b101000 : dec_req_d.op = VSRL;
+                  6'b101001 : dec_req_d.op = VSRA;
+                  6'b101010 : dec_req_d.op = VSSRL;
+                  6'b101011 : dec_req_d.op = VSSRA;
+                  6'b101100 : dec_req_d.op = VNSRL;
+                  6'b101101 : dec_req_d.op = VNSRA;
+                  6'b101110 : begin
+                    dec_req_d.op = VNCLIP;
+                    dec_req_d.vs2_usig = 1'1;
+                  end
+                  6'b101111 : dec_req_d.op = VNCLIP;
+                  default: illegal_insn = 1'b1;
+                endcase
+              end
+              ///////////////////////////////////////////////////////////////////////////////////////////////////
+              // 
+              ///////////////////////////////////////////////////////////////////////////////////////////////////
+              OPMVV: begin: opmvv
+                // These generate a request to Ara's backend
+                dec_req_d.vs1     = dec_insn_d.vs1;
+                dec_req_d.use_vs1 = 1'b1;
+                dec_req_d.vs2     = dec_insn_d.vs2;
+                dec_req_d.use_vs2 = 1'b1;
+                dec_req_d.vd      = dec_insn_d.rd;
+                dec_req_d.use_vd  = 1'b1;
+                dec_req_d.vm      = dec_insn_d.vm;
+                dec_req_d.fu      = VSLD;
+                dec_req_d.vs2_usig    = 1'b0;
+                // Decode based on the func6 field
+                unique case (dec_insn_d.func6)
+                  6'b000000 : dec_req_d.op = VREDSUM;
+                  6'b000001 : dec_req_d.op = VREDAND;
+                  6'b000010 : dec_req_d.op = VREDOR;
+                  6'b000011 : dec_req_d.op = VREDXOR;
+                  6'b000100 : begin
+                    dec_req_d.op = VREDMIN;
+                    dec_req_d.vs2_usig = 1'b1;
+                  end
+                  6'b000101 : dec_req_d.op = VREDMIN;
+                  6'b000110 : begin
+                    dec_req_d.op = VREDMAX;
+                    dec_req_d.vs2_usig = 1'b1;
+                  end
+                  6'b000111 : dec_req_d.op = VREDMAX;
+                  6'b001000 : begin
+                    dec_req_d.op = VAADD;
+                    dec_req_d.fu = LANE;
+                    dec_req_d.vs2_usig = 1'b1;
+                  end
+                  6'b001001 : begin
+                    dec_req_d.op = VAADD;
+                    dec_req_d.fu = LANE;
+                  end
+                  6'b001010 : begin
+                    dec_req_d.op = VASUB;
+                    dec_req_d.fu = LANE;
+                    dec_req_d.vs2_usig = 1'b1;
+                  end
+                  6'b001011 : begin
+                    dec_req_d.op = VASUB;
+                    dec_req_d.fu = LANE;
+                  end
+                  6'b010000 : begin//VWXUNARY0
+                    unique case(dec_insn_d.vs1)
+                      'b00000 : begin
+                        dec_req_d.op = VMVXS;
+                      end
+                      'b10000 : begin
+                        dec_req_d.op = VPOPC;
+                        dec_req_d.fu = MSK;
+                      end
+                      'b10001 : begin
+                        dec_req_d.op = VFIRST;
+                        dec_req_d.fu = MSK;
+                      end
+                      default : illegal_insn = 1;
+                    endcase
+                  end
+                  6'b010010 : begin//VXUNARY0
+                    dec_req_d.fu = LANE;
+                    case(dec_insn_d.vs1)
+                      'b10  : dec_req_d.op = VZEXT_VF8;
+                      'b11  : dec_req_d.op = VSEXT_VF8;
+                      'b100 : dec_req_d.op = VZEXT_VF4;
+                      'b101 : dec_req_d.op = VSEXT_VF4;
+                      'b110 : dec_req_d.op = VZEXT_VF2;
+                      'b111 : dec_req_d.op = VSEXT_VF2;
+                      default : illegal_insn = 1;
+                    endcase
+                  end
+                  6'b010111: dec_req_d.op = VCOMPRESS;
+                  6'b011000: dec_req_d.op = VMANDNOT;
+                  6'b011001: dec_req_d.op = VMAND;
+                  6'b011010: dec_req_d.op = VMOR;
+                  6'b011011: dec_req_d.op = VMXOR;
+                  6'b011100: dec_req_d.op = VMORNOT;
+                  6'b011101: dec_req_d.op = VMNAND;
+                  6'b011110: dec_req_d.op = VMNOR;
+                  6'b011111: dec_req_d.op = VMXNOR;
+                  // Divide instructions
+                  //6'b100000: dec_req_d.op = VDIVU;
+                  //6'b100001: dec_req_d.op = VDIV;
+                  //6'b100010: dec_req_d.op = VREMU;
+                  //6'b100011: dec_req_d.op = VREM;
+                  // Multiply instructions
+                  6'b100100: begin
+                    dec_req_d.op = VMULH;
+                    dec_req_d.fu = LANE;
+                    dec_req_d.vs2_usig = 1'b1;
+                  end
+                  6'b100101: begin
+                    dec_req_d.op = VMUL;
+                    dec_req_d.fu = LANE;
+                  end
+                  6'b100110: begin
+                    dec_req_d.op = VMULHS;
+                    dec_req_d.fu = LANE;
+                    dec_req_d.vs2_usig = 1'b1;
+                  end
+                  6'b100111: begin
+                    dec_req_d.op = VMULH;
+                    dec_req_d.fu = LANE;
+                  end
+                  // Multiply-Add instructions
+                  // vd is also used as a source operand
+                  6'b101001: dec_req_d.op  = VMADD;
+                  6'b101011: dec_req_d.op  = VNMSUB;
+                  6'b101101: dec_req_d.op  = VMACC;
+                  6'b101111: dec_req_d.op  = VNMSAC;
+                  // Widening instructions
+                  6'b110000: begin
+                    dec_req_d.op  = VADD;
+                    dec_req_d.vs2_usig = 1'b1;
+                    dec_req_d.sew_type= 2'd1;
+                  end
+                  6'b110001: begin
+                    dec_req_d.op  = VADD;
+                    dec_req_d.sew_type= 2'd1;
+                  end
+                  6'b110010: begin
+                    dec_req_d.op  = VSUB;
+                    dec_req_d.vs2_usig = 1'b1;
+                    dec_req_d.sew_type= 2'd1;
+                  end
+                  6'b110011: begin
+                    dec_req_d.op  = VSUB;
+                    dec_req_d.sew_type= 2'd1;
+                  end
+                  6'b110100: begin
+                    dec_req_d.op  = VADD;
+                    dec_req_d.vs2_usig = 1'b1;
+                    dec_req_d.sew_type= 2'd2;
+                  end
+                  6'b110101: begin
+                    dec_req_d.op  = VADD;
+                    dec_req_d.sew_type= 2'd2;
+                  end
+                  6'b110110: begin
+                    dec_req_d.op  = VSUB;
+                    dec_req_d.vs2_usig = 1'b1;
+                    dec_req_d.sew_type= 2'd2;
+                  end
+                  6'b110111: begin
+                    dec_req_d.op  = VSUB;
+                    dec_req_d.sew_type= 2'd2;
+                  end
+                  6'b111000: begin
+                    dec_req_d.op  = VMUL;
+                    dec_req_d.vs2_usig = 1'b1;
+                    dec_req_d.sew_type= 2'd1;
+                  end
+                  6'b111010: begin
+                    dec_req_d.op  = VMUL;
+                    dec_req_d.vs2_usig = 1'b1;
+                    dec_req_d.vs1_usig = 1'b1;
+                    dec_req_d.sew_type= 2'd1;
+                  end
+                  6'b111011: begin
+                    dec_req_d.op  = VMUL;
+                    dec_req_d.sew_type= 2'd1;
+                  end
+                  6'b111100: begin
+                    dec_req_d.op       = VMACC;
+                    dec_req_d.sew_type = 2'd2;
+                    dec_req_d.vs2_usig = 1'b1;
+                    dec_req_d.vs1_usig = 1'b1;
+                  end
+                  6'b111101: begin
+                    dec_req_d.op  = VMACC;
+                    dec_req_d.sew_type= 2'd2;
+                  end
+                  6'b111111: begin
+                    dec_req_d.op  = VMACC;
+                    dec_req_d.sew_type= 2'd2;
+                    dec_req_d.vs2_usig = 1'b1;
+                  end
+                  default: illegal_insn = 1'b1;
+                endcase
+              end  
+              ///////////////////////////////////////////////////////////////////////////////////////////////////
+              // 
+              ///////////////////////////////////////////////////////////////////////////////////////////////////
+              OPMVX: begin: opmvx
+                dec_req_d.vs1     = dec_insn_d.vs1;
+                dec_req_d.use_vs1 = 1'b0;
+                dec_req_d.vs2     = dec_insn_d.vs2;
+                dec_req_d.use_vs2 = 1'b1;
+                dec_req_d.vd      = dec_insn_d.vd
+                dec_req_d.use_vd  = 1'b1;
+                dec_req_d.vm      = dec_insn_d.vm;
+                dec_req_d.fu      = VSLD;
+                dec_req_d.vs1_usig= 1'b0;
+                dec_req_d.vs2_usig= 1'b0;
+                dec_req_d.use_rs1 = 1'b0;
+                dec_req_d.rs1     = dec_insn_d.rs1;
+                // Decode based on the func6 field
+                unique case (dec_insn_d.func6)
+                  6'b001000 : begin
+                    dec_req_d.op = VAADD;
+                    dec_req_d.fu = LANE;
+                    dec_req_d.vs2_usig = 1'b1;
+                  end
+                  6'b001001 : begin
+                    dec_req_d.op = VAADD;
+                    dec_req_d.fu = LANE;
+                  end
+                  6'b001010 : begin
+                    dec_req_d.op = VASUB;
+                    dec_req_d.fu = LANE;
+                    dec_req_d.vs2_usig = 1'b1;
+                  end
+                  6'b001011 : begin
+                    dec_req_d.op = VASUB;
+                    dec_req_d.fu = LANE;
+                  end
+                  6'b001011 : begin
+                    dec_req_d.op = VSLIDE1UP;
+                    dec_req_d.fu = VSLD;
+                  end
+                  6'b001110 : begin
+                    dec_req_d.op = VSLIDE1DOWN;
+                    dec_req_d.fu = VSLD;
+                  end
+                  6'b010000 : begin//VRXUNARY0
+                    unique case(dec_insn_d.vs2)
+                      'b00000 : begin
+                        dec_req_d.op = VMVSX;
+                      end
+                      default : illegal_insn = 1;
+                    endcase
+                  end
+                  6'b100100: begin
+                    dec_req_d.op = VMULH;
+                    dec_req_d.fu = LANE;
+                    dec_req_d.vs2_usig = 1'b1;
+                  end
+                  6'b100101: begin
+                    dec_req_d.op = VMUL;
+                    dec_req_d.fu = LANE;
+                  end
+                  6'b100110: begin
+                    dec_req_d.op = VMULHS;
+                    dec_req_d.fu = LANE;
+                    dec_req_d.vs2_usig = 1'b1;
+                  end
+                  6'b100111: begin
+                    dec_req_d.op = VMULH;
+                    dec_req_d.fu = LANE;
+                  end
+                  // Multiply-Add instructions
+                  // vd is also used as a source operand
+                  6'b101001: dec_req_d.op  = VMADD;
+                  6'b101011: dec_req_d.op  = VNMSUB;
+                  6'b101101: dec_req_d.op  = VMACC;
+                  6'b101111: dec_req_d.op  = VNMSAC;
+                  // Widening instructions
+                  6'b110000: begin
+                    dec_req_d.op  = VADD;
+                    dec_req_d.vs2_usig = 1'b1;
+                    dec_req_d.sew_type= 2'd1;
+                  end
+                  6'b110001: begin
+                    dec_req_d.op  = VADD;
+                    dec_req_d.sew_type= 2'd1;
+                  end
+                  6'b110010: begin
+                    dec_req_d.op  = VSUB;
+                    dec_req_d.vs2_usig = 1'b1;
+                    dec_req_d.sew_type= 2'd1;
+                  end
+                  6'b110011: begin
+                    dec_req_d.op  = VSUB;
+                    dec_req_d.sew_type= 2'd1;
+                  end
+                  6'b110100: begin
+                    dec_req_d.op  = VADD;
+                    dec_req_d.vs2_usig = 1'b1;
+                    dec_req_d.sew_type= 2'd2;
+                  end
+                  6'b110101: begin
+                    dec_req_d.op  = VADD;
+                    dec_req_d.sew_type= 2'd2;
+                  end
+                  6'b110110: begin
+                    dec_req_d.op  = VSUB;
+                    dec_req_d.vs2_usig = 1'b1;
+                    dec_req_d.sew_type= 2'd2;
+                  end
+                  6'b110111: begin
+                    dec_req_d.op  = VSUB;
+                    dec_req_d.sew_type= 2'd2;
+                  end
+                  6'b111000: begin
+                    dec_req_d.op  = VMUL;
+                    dec_req_d.vs2_usig = 1'b1;
+                    dec_req_d.sew_type= 2'd1;
+                  end
+                  6'b111010: begin
+                    dec_req_d.op  = VMUL;
+                    dec_req_d.vs2_usig = 1'b1;
+                    dec_req_d.vs1_usig = 1'b1;
+                    dec_req_d.sew_type= 2'd1;
+                  end
+                  6'b111011: begin
+                    dec_req_d.op  = VMUL;
+                    dec_req_d.sew_type= 2'd1;
+                  end
+                  6'b111100: begin
+                    dec_req_d.op       = VMACC;
+                    dec_req_d.sew_type = 2'd2;
+                    dec_req_d.vs2_usig = 1'b1;
+                    dec_req_d.vs1_usig = 1'b1;
+                  end
+                  6'b111101: begin
+                    dec_req_d.op  = VMACC;
+                    dec_req_d.sew_type= 2'd2;
+                  end
+                  6'b111110: begin
+                    dec_req_d.op  = VMACC;
+                    dec_req_d.sew_type= 2'd2;
+                    dec_req_d.vs1_usig = 1'b1;
+                  end
+                  6'b111111: begin
+                    dec_req_d.op  = VMACC;
+                    dec_req_d.sew_type= 2'd2;
+                    dec_req_d.vs2_usig = 1'b1;
+                  end
+                  default: illegal_insn = 1'b1;
+                endcase
+              end
+              default: illegal_insn = 1'b1;
+              //OPFVV: begin: opfvv
+              //end
+              //OPFVF: begin: opfvf
+              //end
+          end
+      end
+      OpcodeLoadFp:begin
+        dec_req_d.fu      = VLDU;
+        dec_req_d.vd      = dec_insn_d.vd
+        dec_req_d.use_vd  = 1'b0;
+        dec_req_d.vm      = dec_insn_d.vm;
+        unique case(dec_insn_d.mop)
+          2'b00 : begin
+            dec_req_d.op  = VLE;
+            dec_req_d.sew = dec_insn_d.width[1:0];
+          end
+          2'b01 : dec_req_d.op  = VLUXEI;
+          2'b10 : begin
+            dec_req_d.op  = VLSE;
+            dec_req_d.sew = dec_insn_d.width[1:0];
+          end
+          2'b11 : dec_req_d.op  = VLOXEI;
+          default: illegal_insn = 1'b1;
+        endcase
+
+      end
+      OpcodeStoreFp:begin
+        dec_req_d.fu      = VSTU;
+        dec_req_d.vd      = dec_insn_d.vd
+        dec_req_d.use_vd  = 1'b0;
+        dec_req_d.vm      = dec_insn_d.vm;
+        unique case(dec_insn_d.mop)
+          2'b00 : begin
+            dec_req_d.op  = VSE;
+            dec_req_d.sew = dec_insn_d.width[1:0];
+          end
+          2'b01 : dec_req_d.op  = VSUXEI;
+          2'b10 : begin
+            dec_req_d.op  = VSSE;
+            dec_req_d.sew = dec_insn_d.width[1:0];
+          end
+          2'b11 : dec_req_d.op  = VSOXEI;
+          default: illegal_insn = 1'b1;
+        endcase       
+      end
+      
+      OpcodeSystem:begin
+        // These always respond at the same cycle
+        is_config        = 1'b1;
+
+        unique case (dec_insn_d.funct3)
+          3'b001: begin // csrrw
+            // Decode the CSR.
+            case (dec_insn_d.imm)
+              // Only vstart can be written with CSR instructions.
+              CSR_VSTART: begin
+                vstart_d          = 'd0;
+                sca_resp_d.result = vstart_q;
+              end
+              default: illegal_insn = 1'b1;
+            endcase
+          end
+          3'b010: begin // csrrs
+            // Decode the CSR.
+            case (dec_insn_d.imm)
+              CSR_VSTART: begin
+                vstart_d          = 'd0;
+                sca_resp_d.result = vstart_q;
+              end
+              CSR_VTYPE: begin
+                // Only reads are allowed
+                if (dec_insn_d.rs1 == '0) sca_resp_d.result = vtype_q;
+                else illegal_insn = 1'b1;
+              end
+              CSR_VL: begin
+                // Only reads are allowed
+                if (dec_insn_d.rs1 == '0) sca_resp_d.result = vl_q;
+                else illegal_insn = 1'b1;
+              end
+              CSR_VLENB: begin
+                // Only reads are allowed
+                if (dec_insn_d.rs1 == '0) sca_resp_d.result = VLENB;
+                else illegal_insn = 1'b1;
+              end
+              default: illegal_insn = 1'b1;
+            endcase
+          end
+          3'b011: begin // csrrc
+            // Decode the CSR.
+            case (dec_insn_d.imm)
+              CSR_VSTART: begin
+                vstart_d          = 'd0;
+                sca_resp_d.result = vstart_q;
+              end
+              CSR_VTYPE: begin
+                // Only reads are allowed
+                if (dec_insn_d.rs1 == '0) sca_resp_d.result = vtype_q;
+                else illegal_insn = 1'b1;
+              end
+              CSR_VL: begin
+                // Only reads are allowed
+                if (dec_insn_d.rs1 == '0) sca_resp_d.result = vl_q;
+                else illegal_insn = 1'b1;
+              end
+              CSR_VLENB: begin
+                // Only reads are allowed
+                if (dec_insn_d.rs1 == '0) sca_resp_d.result = VLENB;
+                else illegal_insn = 1'b1;
+              end
+              default: illegal_insn = 1'b1;
+            endcase
+          end
+          3'b101: begin // csrrwi
+            // Decode the CSR.
+            case (dec_insn_d.imm)
+              // Only vstart can be written with CSR instructions.
+              CSR_VSTART: begin
+                vstart_d          = 'd0;
+                acc_resp_o.result = vstart_q;
+              end
+              default: illegal_insn = 1'b1;
+            endcase
+          end
+          3'b110: begin // csrrsi
+            // Decode the CSR.
+            case (dec_insn_d.imm)
+              CSR_VSTART: begin
+                vstart_d          = 'd0;
+                sca_resp_d.result = vstart_q;
+              end
+              CSR_VTYPE: begin
+                // Only reads are allowed
+                if (dec_insn_d.rs1 == '0) sca_resp_d.result = vtype_q;
+                else illegal_insn = 1'b1;
+              end
+              CSR_VL: begin
+                // Only reads are allowed
+                if (dec_insn_d.rs1 == '0) sca_resp_d.result = vl_q;
+                else illegal_insn = 1'b1;
+              end
+              CSR_VLENB: begin
+                // Only reads are allowed
+                if (dec_insn_d.rs1 == '0) sca_resp_d.result = VLENB;
+                else illegal_insn = 1'b1;
+              end
+              default: illegal_insn = 1'b1;
+            endcase
+          end
+          3'b111: begin // csrrci
+            // Decode the CSR.
+            case (dec_insn_d.imm)
+              CSR_VSTART: begin
+                vstart_d          = 'd0;
+                sca_resp_d.result = vstart_q;
+              end
+              CSR_VTYPE: begin
+                // Only reads are allowed
+                if (dec_insn_d.rs1 == '0) sca_resp_d.result = vtype_q;
+                else illegal_insn = 1'b1;
+              end
+              CSR_VL: begin
+                // Only reads are allowed
+                
+                if (dec_insn_d.rs1 == '0) sca_resp_d.result = vl_q;
+                else illegal_insn = 1'b1;
+              end
+              CSR_VLENB: begin
+                // Only reads are allowed
+                if (dec_insn_d.rs1 == '0) sca_resp_d.result = VLENB;
+                else illegal_insn = 1'b1;
+              end
+              default: illegal_insn = 1'b1;
+            endcase
+          end
+          default: illegal_insn = 1'b1;
+        endcase
+      end
+      default: begin
+        illegal_insn = 1'b1;
+      end
+
+    endcase
+    
+  end
+  
+
+
+
+endmodule : vec_dec
